@@ -101,7 +101,8 @@ _DEFAULT_CONFIG = {
     "system.network.packets.receive": None,
     "system.network.errors.transmit": None,
     "system.network.errors.receive": None,
-    "system.network.io": ["transmit", "receive"],
+    "system.network.io.transmit": None,
+    "system.network.io.receive": None,
     "system.network.connections": ["family", "type"],
     "runtime.memory": ["rss", "vms"],
     "runtime.cpu.time": ["user", "system"],
@@ -147,7 +148,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         self._system_network_packets_receive_labels = self._labels.copy()
         self._system_network_errors_transmit_labels = self._labels.copy()
         self._system_network_errors_receive_labels = self._labels.copy()
-        self._system_network_io_labels = self._labels.copy()
+        self._system_network_io_transmit_labels = self._labels.copy()
+        self._system_network_io_receive_labels = self._labels.copy()
         self._system_network_connections_labels = self._labels.copy()
 
         self._runtime_memory_labels = self._labels.copy()
@@ -335,11 +337,19 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                 unit="errors",
             )
 
-        if "system.network.io" in self._config:
+        if "system.network.io.transmit" in self._config:
             self._meter.create_observable_counter(
-                name="system.network.io",
-                callbacks=[self._get_system_network_io],
-                description="System network io",
+                name="system.network.io.transmit",
+                callbacks=[self._get_system_network_io_transmit],
+                description="System network io transmit",
+                unit="bytes",
+            )
+
+        if "system.network.io.receive" in self._config:
+            self._meter.create_observable_counter(
+                name="system.network.io.receive",
+                callbacks=[self._get_system_network_io_receive],
+                description="System network io receive",
                 unit="bytes",
             )
 
@@ -612,21 +622,29 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                     self._system_network_errors_receive_labels.copy(),
                 )
 
-    def _get_system_network_io(
+    def _get_system_network_io_transmit(
         self, options: CallbackOptions
     ) -> Iterable[Observation]:
-        """Observer callback for network IO"""
-
+        """Observer callback for network IO transmit"""
         for device, counters in psutil.net_io_counters(pernic=True).items():
-            for metric in self._config["system.network.dropped.packets"]:
-                recv_sent = {"receive": "recv", "transmit": "sent"}[metric]
-                if hasattr(counters, f"bytes_{recv_sent}"):
-                    self._system_network_io_labels["device"] = device
-                    self._system_network_io_labels["direction"] = metric
-                    yield Observation(
-                        getattr(counters, f"bytes_{recv_sent}"),
-                        self._system_network_io_labels.copy(),
-                    )
+            if hasattr(counters, "bytes_sent"):
+                self._system_network_io_transmit_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "bytes_sent"),
+                    self._system_network_io_transmit_labels.copy(),
+                )
+
+    def _get_system_network_io_receive(
+        self, options: CallbackOptions
+    ) -> Iterable[Observation]:
+        """Observer callback for network IO receive"""
+        for device, counters in psutil.net_io_counters(pernic=True).items():
+            if hasattr(counters, "bytes_recv"):
+                self._system_network_io_receive_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "bytes_recv"),
+                    self._system_network_io_receive_labels.copy(),
+                )
 
     def _get_system_network_connections(
         self, options: CallbackOptions

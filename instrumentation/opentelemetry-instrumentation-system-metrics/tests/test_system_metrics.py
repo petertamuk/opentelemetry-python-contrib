@@ -75,7 +75,7 @@ class TestSystemMetrics(TestBase):
             for scope_metrics in resource_metrics.scope_metrics:
                 for metric in scope_metrics.metrics:
                     metric_names.append(metric.name)
-        self.assertEqual(len(metric_names), 21)
+        self.assertEqual(len(metric_names), 22)
 
         observer_names = [
             "system.cpu.time",
@@ -94,7 +94,8 @@ class TestSystemMetrics(TestBase):
             "system.network.packets.receive",
             "system.network.errors.transmit",
             "system.network.errors.receive",
-            "system.network.io",
+            "system.network.io.transmit",
+            "system.network.io.receive",
             "system.network.connections",
             f"runtime.{self.implementation}.memory",
             f"runtime.{self.implementation}.cpu_time",
@@ -742,7 +743,7 @@ class TestSystemMetrics(TestBase):
         self._test_metrics("system.network.errors.receive", expected)
 
     @mock.patch("psutil.net_io_counters")
-    def test_system_network_io(self, mock_net_io_counters):
+    def test_system_network_io_transmit(self, mock_net_io_counters):
         NetIO = namedtuple(
             "NetIO",
             [
@@ -780,20 +781,54 @@ class TestSystemMetrics(TestBase):
         }
 
         expected = [
-            _SystemMetricsResult(
-                {"device": "eth0", "direction": "receive"}, 8
-            ),
-            _SystemMetricsResult(
-                {"device": "eth0", "direction": "transmit"}, 7
-            ),
-            _SystemMetricsResult(
-                {"device": "eth1", "direction": "receive"}, 16
-            ),
-            _SystemMetricsResult(
-                {"device": "eth1", "direction": "transmit"}, 15
-            ),
+            _SystemMetricsResult({"device": "eth0"}, 7),
+            _SystemMetricsResult({"device": "eth1"}, 15),
         ]
-        self._test_metrics("system.network.io", expected)
+        self._test_metrics("system.network.io.transmit", expected)
+
+    @mock.patch("psutil.net_io_counters")
+    def test_system_network_io_receive(self, mock_net_io_counters):
+        NetIO = namedtuple(
+            "NetIO",
+            [
+                "dropin",
+                "dropout",
+                "packets_sent",
+                "packets_recv",
+                "errin",
+                "errout",
+                "bytes_sent",
+                "bytes_recv",
+            ],
+        )
+        mock_net_io_counters.return_value = {
+            "eth0": NetIO(
+                dropin=1,
+                dropout=2,
+                packets_sent=3,
+                packets_recv=4,
+                errin=5,
+                errout=6,
+                bytes_sent=7,
+                bytes_recv=8,
+            ),
+            "eth1": NetIO(
+                dropin=9,
+                dropout=10,
+                packets_sent=11,
+                packets_recv=12,
+                errin=13,
+                errout=14,
+                bytes_sent=15,
+                bytes_recv=16,
+            ),
+        }
+
+        expected = [
+            _SystemMetricsResult({"device": "eth0"}, 8),
+            _SystemMetricsResult({"device": "eth1"}, 16),
+        ]
+        self._test_metrics("system.network.io.receive", expected)
 
     @mock.patch("psutil.net_connections")
     def test_system_network_connections(self, mock_net_connections):
