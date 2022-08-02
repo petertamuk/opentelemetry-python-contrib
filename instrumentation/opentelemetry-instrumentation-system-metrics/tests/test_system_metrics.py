@@ -75,7 +75,7 @@ class TestSystemMetrics(TestBase):
             for scope_metrics in resource_metrics.scope_metrics:
                 for metric in scope_metrics.metrics:
                     metric_names.append(metric.name)
-        self.assertEqual(len(metric_names), 23)
+        self.assertEqual(len(metric_names), 24)
 
         observer_names = [
             "system.cpu.time",
@@ -88,7 +88,8 @@ class TestSystemMetrics(TestBase):
             "system.disk.io.write",
             "system.disk.operations.read",
             "system.disk.operations.write",
-            "system.disk.time",
+            "system.disk.operation_time.read",
+            "system.disk.operation_time.write",
             "system.network.dropped.transmit",
             "system.network.dropped.receive",
             "system.network.packets.transmit",
@@ -460,7 +461,7 @@ class TestSystemMetrics(TestBase):
         self._test_metrics("system.disk.operations.write", expected)
 
     @mock.patch("psutil.disk_io_counters")
-    def test_system_disk_time(self, mock_disk_io_counters):
+    def test_system_disk_operation_time_read(self, mock_disk_io_counters):
         DiskIO = namedtuple(
             "DiskIO",
             [
@@ -498,20 +499,54 @@ class TestSystemMetrics(TestBase):
         }
 
         expected = [
-            _SystemMetricsResult(
-                {"device": "sda", "direction": "read"}, 5 / 1000
-            ),
-            _SystemMetricsResult(
-                {"device": "sda", "direction": "write"}, 6 / 1000
-            ),
-            _SystemMetricsResult(
-                {"device": "sdb", "direction": "read"}, 13 / 1000
-            ),
-            _SystemMetricsResult(
-                {"device": "sdb", "direction": "write"}, 14 / 1000
-            ),
+            _SystemMetricsResult({"device": "sda"}, 5 / 1000),
+            _SystemMetricsResult({"device": "sdb"}, 13 / 1000),
         ]
-        self._test_metrics("system.disk.time", expected)
+        self._test_metrics("system.disk.operation_time.read", expected)
+
+    @mock.patch("psutil.disk_io_counters")
+    def test_system_disk_operation_time_write(self, mock_disk_io_counters):
+        DiskIO = namedtuple(
+            "DiskIO",
+            [
+                "read_count",
+                "write_count",
+                "read_bytes",
+                "write_bytes",
+                "read_time",
+                "write_time",
+                "read_merged_count",
+                "write_merged_count",
+            ],
+        )
+        mock_disk_io_counters.return_value = {
+            "sda": DiskIO(
+                read_count=1,
+                write_count=2,
+                read_bytes=3,
+                write_bytes=4,
+                read_time=5,
+                write_time=6,
+                read_merged_count=7,
+                write_merged_count=8,
+            ),
+            "sdb": DiskIO(
+                read_count=9,
+                write_count=10,
+                read_bytes=11,
+                write_bytes=12,
+                read_time=13,
+                write_time=14,
+                read_merged_count=15,
+                write_merged_count=16,
+            ),
+        }
+
+        expected = [
+            _SystemMetricsResult({"device": "sda"}, 6 / 1000),
+            _SystemMetricsResult({"device": "sdb"}, 14 / 1000),
+        ]
+        self._test_metrics("system.disk.operation_time.write", expected)
 
     @mock.patch("psutil.net_io_counters")
     def test_system_network_dropped_transmit(self, mock_net_io_counters):

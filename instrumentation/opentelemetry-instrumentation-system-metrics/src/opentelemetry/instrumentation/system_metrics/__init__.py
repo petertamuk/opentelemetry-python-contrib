@@ -95,7 +95,8 @@ _DEFAULT_CONFIG = {
     "system.disk.io.write": None,
     "system.disk.operations.read": None,
     "system.disk.operations.write": None,
-    "system.disk.time": ["read", "write"],
+    "system.disk.operation_time.read": None,
+    "system.disk.operation_time.write": None,
     "system.network.dropped.transmit": None,
     "system.network.dropped.receive": None,
     "system.network.packets.transmit": None,
@@ -141,7 +142,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         self._system_disk_io_write_labels = self._labels.copy()
         self._system_disk_operations_read_labels = self._labels.copy()
         self._system_disk_operations_write_labels = self._labels.copy()
-        self._system_disk_time_labels = self._labels.copy()
+        self._system_disk_operation_time_read_labels = self._labels.copy()
+        self._system_disk_operation_time_write_labels = self._labels.copy()
         self._system_disk_merged_labels = self._labels.copy()
 
         self._system_network_dropped_transmit_labels = self._labels.copy()
@@ -269,11 +271,19 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                 unit="operations",
             )
 
-        if "system.disk.time" in self._config:
+        if "system.disk.operation_time.read" in self._config:
             self._meter.create_observable_counter(
-                name="system.disk.time",
-                callbacks=[self._get_system_disk_time],
-                description="System disk time",
+                name="system.disk.operation_time.read",
+                callbacks=[self._get_system_disk_operation_time_read],
+                description="System disk operation time read",
+                unit="seconds",
+            )
+
+        if "system.disk.operation_time.write" in self._config:
+            self._meter.create_observable_counter(
+                name="system.disk.operation_time.write",
+                callbacks=[self._get_system_disk_operation_time_write],
+                description="System disk operation time write",
                 unit="seconds",
             )
 
@@ -532,19 +542,29 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                     self._system_disk_operations_write_labels.copy(),
                 )
 
-    def _get_system_disk_time(
+    def _get_system_disk_operation_time_read(
         self, options: CallbackOptions
     ) -> Iterable[Observation]:
-        """Observer callback for disk time"""
+        """Observer callback for disk operation time read"""
         for device, counters in psutil.disk_io_counters(perdisk=True).items():
-            for metric in self._config["system.disk.time"]:
-                if hasattr(counters, f"{metric}_time"):
-                    self._system_disk_time_labels["device"] = device
-                    self._system_disk_time_labels["direction"] = metric
-                    yield Observation(
-                        getattr(counters, f"{metric}_time") / 1000,
-                        self._system_disk_time_labels.copy(),
-                    )
+            if hasattr(counters, "read_time"):
+                self._system_disk_operation_time_read_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "read_time") / 1000,
+                    self._system_disk_operation_time_read_labels.copy(),
+                )
+
+    def _get_system_disk_operation_time_write(
+        self, options: CallbackOptions
+    ) -> Iterable[Observation]:
+        """Observer callback for disk operation time write"""
+        for device, counters in psutil.disk_io_counters(perdisk=True).items():
+            if hasattr(counters, "write_time"):
+                self._system_disk_operation_time_write_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "write_time") / 1000,
+                    self._system_disk_operation_time_write_labels.copy(),
+                )
 
     def _get_system_disk_merged(
         self, options: CallbackOptions
@@ -553,6 +573,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
 
         # FIXME The units in the spec is 1, it seems like it should be
         # operations or the value type should be Double
+        
+        # FIXME Metric should be system.disk.merged
 
         for device, counters in psutil.disk_io_counters(perdisk=True).items():
             for metric in self._config["system.disk.time"]:
