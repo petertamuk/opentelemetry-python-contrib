@@ -91,7 +91,8 @@ _DEFAULT_CONFIG = {
     "system.memory.utilization": ["used", "free", "cached"],
     "system.swap.usage": ["used", "free"],
     "system.swap.utilization": ["used", "free"],
-    "system.disk.io": ["read", "write"],
+    "system.disk.io.read": None,
+    "system.disk.io.write": None,
     "system.disk.operations": ["read", "write"],
     "system.disk.time": ["read", "write"],
     "system.network.dropped.packets": ["transmit", "receive"],
@@ -131,7 +132,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         self._system_swap_usage_labels = self._labels.copy()
         self._system_swap_utilization_labels = self._labels.copy()
 
-        self._system_disk_io_labels = self._labels.copy()
+        self._system_disk_io_read_labels = self._labels.copy()
+        self._system_disk_io_write_labels = self._labels.copy()
         self._system_disk_operations_labels = self._labels.copy()
         self._system_disk_time_labels = self._labels.copy()
         self._system_disk_merged_labels = self._labels.copy()
@@ -225,11 +227,19 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         #     value_type=int,
         # )
 
-        if "system.disk.io" in self._config:
+        if "system.disk.io.read" in self._config:
             self._meter.create_observable_counter(
-                name="system.disk.io",
-                callbacks=[self._get_system_disk_io],
-                description="System disk IO",
+                name="system.disk.io.read",
+                callbacks=[self._get_system_disk_io_read],
+                description="System disk IO read",
+                unit="bytes",
+            )
+
+        if "system.disk.io.write" in self._config:
+            self._meter.create_observable_counter(
+                name="system.disk.io.write",
+                callbacks=[self._get_system_disk_io_write],
+                description="System disk IO write",
                 unit="bytes",
             )
 
@@ -424,19 +434,29 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                     self._system_swap_utilization_labels.copy(),
                 )
 
-    def _get_system_disk_io(
+    def _get_system_disk_io_read(
         self, options: CallbackOptions
     ) -> Iterable[Observation]:
-        """Observer callback for disk IO"""
+        """Observer callback for disk IO read"""
         for device, counters in psutil.disk_io_counters(perdisk=True).items():
-            for metric in self._config["system.disk.io"]:
-                if hasattr(counters, f"{metric}_bytes"):
-                    self._system_disk_io_labels["device"] = device
-                    self._system_disk_io_labels["direction"] = metric
-                    yield Observation(
-                        getattr(counters, f"{metric}_bytes"),
-                        self._system_disk_io_labels.copy(),
-                    )
+            if hasattr(counters, "read_bytes"):
+                self._system_disk_io_read_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "read_bytes"),
+                    self._system_disk_io_read_labels.copy(),
+                )
+
+    def _get_system_disk_io_write(
+        self, options: CallbackOptions
+    ) -> Iterable[Observation]:
+        """Observer callback for disk IO write"""
+        for device, counters in psutil.disk_io_counters(perdisk=True).items():
+            if hasattr(counters, "write_bytes"):
+                self._system_disk_io_write_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "write_bytes"),
+                    self._system_disk_io_write_labels.copy(),
+                )
 
     def _get_system_disk_operations(
         self, options: CallbackOptions
