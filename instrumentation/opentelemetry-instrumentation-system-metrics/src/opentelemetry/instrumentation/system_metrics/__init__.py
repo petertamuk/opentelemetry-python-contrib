@@ -99,7 +99,8 @@ _DEFAULT_CONFIG = {
     "system.network.dropped.packets": ["transmit", "receive"],
     "system.network.packets.transmit": None,
     "system.network.packets.receive": None,
-    "system.network.errors": ["transmit", "receive"],
+    "system.network.errors.transmit": None,
+    "system.network.errors.receive": None,
     "system.network.io": ["transmit", "receive"],
     "system.network.connections": ["family", "type"],
     "runtime.memory": ["rss", "vms"],
@@ -144,7 +145,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         self._system_network_dropped_packets_labels = self._labels.copy()
         self._system_network_packets_transmit_labels = self._labels.copy()
         self._system_network_packets_receive_labels = self._labels.copy()
-        self._system_network_errors_labels = self._labels.copy()
+        self._system_network_errors_transmit_labels = self._labels.copy()
+        self._system_network_errors_receive_labels = self._labels.copy()
         self._system_network_io_labels = self._labels.copy()
         self._system_network_connections_labels = self._labels.copy()
 
@@ -317,11 +319,19 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                 unit="packets",
             )
 
-        if "system.network.errors" in self._config:
+        if "system.network.errors.transmit" in self._config:
             self._meter.create_observable_counter(
-                name="system.network.errors",
-                callbacks=[self._get_system_network_errors],
-                description="System network errors",
+                name="system.network.errors.transmit",
+                callbacks=[self._get_system_network_errors_transmit],
+                description="System network errors transmit",
+                unit="errors",
+            )
+
+        if "system.network.errors.receive" in self._config:
+            self._meter.create_observable_counter(
+                name="system.network.errors.receive",
+                callbacks=[self._get_system_network_errors_receive],
+                description="System network errors receive",
                 unit="errors",
             )
 
@@ -578,20 +588,29 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                     self._system_network_packets_receive_labels.copy(),
                 )
 
-    def _get_system_network_errors(
+    def _get_system_network_errors_transmit(
         self, options: CallbackOptions
     ) -> Iterable[Observation]:
-        """Observer callback for network errors"""
+        """Observer callback for network errors transmit"""
         for device, counters in psutil.net_io_counters(pernic=True).items():
-            for metric in self._config["system.network.errors"]:
-                in_out = {"receive": "in", "transmit": "out"}[metric]
-                if hasattr(counters, f"err{in_out}"):
-                    self._system_network_errors_labels["device"] = device
-                    self._system_network_errors_labels["direction"] = metric
-                    yield Observation(
-                        getattr(counters, f"err{in_out}"),
-                        self._system_network_errors_labels.copy(),
-                    )
+            if hasattr(counters, "errout"):
+                self._system_network_errors_transmit_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "errout"),
+                    self._system_network_errors_transmit_labels.copy(),
+                )
+
+    def _get_system_network_errors_receive(
+        self, options: CallbackOptions
+    ) -> Iterable[Observation]:
+        """Observer callback for network errors receive"""
+        for device, counters in psutil.net_io_counters(pernic=True).items():
+            if hasattr(counters, "errin"):
+                self._system_network_errors_receive_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "errin"),
+                    self._system_network_errors_receive_labels.copy(),
+                )
 
     def _get_system_network_io(
         self, options: CallbackOptions
