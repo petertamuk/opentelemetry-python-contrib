@@ -96,7 +96,8 @@ _DEFAULT_CONFIG = {
     "system.disk.operations.read": None,
     "system.disk.operations.write": None,
     "system.disk.time": ["read", "write"],
-    "system.network.dropped.packets": ["transmit", "receive"],
+    "system.network.dropped.transmit": None,
+    "system.network.dropped.receive": None,
     "system.network.packets.transmit": None,
     "system.network.packets.receive": None,
     "system.network.errors.transmit": None,
@@ -143,7 +144,8 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         self._system_disk_time_labels = self._labels.copy()
         self._system_disk_merged_labels = self._labels.copy()
 
-        self._system_network_dropped_packets_labels = self._labels.copy()
+        self._system_network_dropped_transmit_labels = self._labels.copy()
+        self._system_network_dropped_receive_labels = self._labels.copy()
         self._system_network_packets_transmit_labels = self._labels.copy()
         self._system_network_packets_receive_labels = self._labels.copy()
         self._system_network_errors_transmit_labels = self._labels.copy()
@@ -297,11 +299,19 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
         # TODO Filesystem information can be obtained with os.statvfs in Unix-like
         # OSs, how to do the same in Windows?
 
-        if "system.network.dropped.packets" in self._config:
+        if "system.network.dropped.transmit" in self._config:
             self._meter.create_observable_counter(
-                name="system.network.dropped_packets",
-                callbacks=[self._get_system_network_dropped_packets],
-                description="System network dropped_packets",
+                name="system.network.dropped.transmit",
+                callbacks=[self._get_system_network_dropped_transmit],
+                description="System network dropped packets transmit",
+                unit="packets",
+            )
+
+        if "system.network.dropped.receive" in self._config:
+            self._meter.create_observable_counter(
+                name="system.network.dropped.receive",
+                callbacks=[self._get_system_network_dropped_receive],
+                description="System network dropped packets receive",
                 unit="packets",
             )
 
@@ -554,25 +564,29 @@ class SystemMetricsInstrumentor(BaseInstrumentor):
                         self._system_disk_merged_labels.copy(),
                     )
 
-    def _get_system_network_dropped_packets(
+    def _get_system_network_dropped_transmit(
         self, options: CallbackOptions
     ) -> Iterable[Observation]:
-        """Observer callback for network dropped packets"""
-
+        """Observer callback for network dropped packets transmit"""
         for device, counters in psutil.net_io_counters(pernic=True).items():
-            for metric in self._config["system.network.dropped.packets"]:
-                in_out = {"receive": "in", "transmit": "out"}[metric]
-                if hasattr(counters, f"drop{in_out}"):
-                    self._system_network_dropped_packets_labels[
-                        "device"
-                    ] = device
-                    self._system_network_dropped_packets_labels[
-                        "direction"
-                    ] = metric
-                    yield Observation(
-                        getattr(counters, f"drop{in_out}"),
-                        self._system_network_dropped_packets_labels.copy(),
-                    )
+            if hasattr(counters, "dropout"):
+                self._system_network_dropped_transmit_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "dropout"),
+                    self._system_network_dropped_transmit_labels.copy(),
+                )
+
+    def _get_system_network_dropped_receive(
+        self, options: CallbackOptions
+    ) -> Iterable[Observation]:
+        """Observer callback for network dropped packets receive"""
+        for device, counters in psutil.net_io_counters(pernic=True).items():
+            if hasattr(counters, "dropin"):
+                self._system_network_dropped_receive_labels["device"] = device
+                yield Observation(
+                    getattr(counters, "dropin"),
+                    self._system_network_dropped_receive_labels.copy(),
+                )
 
     def _get_system_network_packets_transmit(
         self, options: CallbackOptions
